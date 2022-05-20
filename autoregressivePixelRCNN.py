@@ -2,13 +2,14 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+from tqdm import tqdm
 
 from masked_cnn_layer import MaskedConv2d, AutoregressiveMaskedConv2d, AutoregressiveResidualMaskedConv2d
 
 
 class AutoregressiveColorPixelRCNN(nn.Module):
     """ Pixel Residual-CNN-class using residual blocks as shown in figure 5 from "Pixel Recurrent Neural Networks" by Aaron van den Oord et. al. """
-    def __init__(self, in_channels, out_channels, conv_filters):
+    def __init__(self, in_channels, out_channels, conv_filters, device):
         super().__init__()
         self.net = nn.Sequential(
             # A 7x7 A-type convolution
@@ -23,13 +24,13 @@ class AutoregressiveColorPixelRCNN(nn.Module):
             AutoregressiveResidualMaskedConv2d(conv_filters), nn.BatchNorm2d(conv_filters), nn.ReLU(),
             AutoregressiveResidualMaskedConv2d(conv_filters), nn.BatchNorm2d(conv_filters), nn.ReLU(),
             AutoregressiveMaskedConv2d('B', conv_filters, out_channels, kernel_size=1, padding=0)
-        ).cuda()
+        ).to(device)
 
     def forward(self, x):
         return self.net(x)
 
 
-def main(train_data, test_data, image_shape):
+def main(train_data, test_data, image_shape, epochs=10, lr=1e-3, num_samples=100):
     """
     train_data: A (n_train, H, W, C) uint8 numpy array of color images with values in {0, 1, 2, 3}
     test_data: A (n_test, H, W, C) uint8 numpy array of color images with values in {0, 1, 2, 3}
@@ -38,14 +39,17 @@ def main(train_data, test_data, image_shape):
     Returns
     - a (# of training iterations,) numpy array of train_losses evaluated every minibatch
     - a (# of epochs + 1,) numpy array of test_losses evaluated once at initialization and after each epoch
-    - a numpy array of size (100, H, C, W) of samples with values in {0, 1, 2, 3}
+    - a numpy array of size (num_samples, H, C, W) of samples with values in {0, 1, 2, 3}
     """
     H, W, C = image_shape
-    output_bits = 4
+    output_bits = 256
+
+    gpu = torch.cuda.is_available()
+    device = torch.device("cuda" if gpu else "cpu")
 
     def normalize(x):
         """ Values in [0, 3] normalizing to [-1, 1] """
-        return (x - 1.5) / 1.5
+        return x / 255
 
     def get_proba(output):
         return torch.nn.functional.softmax(output.reshape(output.shape[0], output_bits, C, H, W), dim=1)
@@ -56,21 +60,21 @@ def main(train_data, test_data, image_shape):
 
     def get_test_loss(dataset, model):
         test_loss = []
-        for batch in torch.split(dataset, 128):
-            out = model(normalize(batch))
-            loss = cross_entropy_loss(batch, out)
-            test_loss.append(loss.item())
+        with torch.no_grad():
+            for batch in torch.split(dataset, 128):
+                batch = normalize(batch)
+                out = model(batch)
+                loss = cross_entropy_loss(batch, out)
+                test_loss.append(loss.item())
 
         return np.mean(np.array(test_loss))
 
-    train_data = torch.from_numpy(np.transpose(train_data, [0, 3, 1, 2])).float().cuda()
-    test_data = torch.from_numpy(np.transpose(test_data, [0, 3, 1, 2])).float().cuda()
+    train_data = torch.from_numpy(np.transpose(train_data, [0, 3, 1, 2])).float().to(device)
+    test_data = torch.from_numpy(np.transpose(test_data, [0, 3, 1, 2])).float().to(device)
 
-    epochs = 10
-    lr = 1e-3
     no_channels, out_channels, convolution_filters = C, C * output_bits, 120
 
-    pixelrcnn_auto = AutoregressiveColorPixelRCNN(no_channels, out_channels, convolution_filters).cuda()
+    pixelrcnn_auto = AutoregressiveColorPixelRCNN(no_channels, out_channels, convolution_filters, device).to(device)
     train_loader = torch.utils.data.DataLoader(train_data, batch_size=128, shuffle=True)
     optimizer = torch.optim.Adam(pixelrcnn_auto.parameters(), lr=lr)
 
@@ -78,7 +82,7 @@ def main(train_data, test_data, image_shape):
     test_losses = [get_test_loss(test_data, pixelrcnn_auto)]
 
     # Training
-    for epoch in range(epochs):
+    for epoch in tqdm(range(epochs)):
         for batch in train_loader:
             optimizer.zero_grad()
             output = pixelrcnn_auto(normalize(batch))
@@ -91,17 +95,19 @@ def main(train_data, test_data, image_shape):
         test_losses.append(test_loss)
         print(f'{epoch + 1}/{epochs} epochs')
 
-    torch.cuda.empty_cache()
+    if gpu:
+        torch.cuda.empty_cache()
     pixelrcnn_auto.eval()
 
+    print("Training complete. Sampling.")
     # Sampling
-    samples = torch.zeros(size=(100, C, H, W)).cuda()
+    samples = torch.zeros(size=(num_samples, C, H, W)).to(device)
     with torch.no_grad():
-        for i in range(H):
-            for j in range(W):
-                for c in range(C):
+        for i in tqdm(range(H)):
+            for j in tqdm(range(W)):
+                for c in tqdm(range(C)):
                     out = pixelrcnn_auto(normalize(samples))
                     proba = get_proba(out)
                     samples[:, c, i, j] = torch.multinomial(proba[:, :, c, i, j], 1).squeeze().float()
 
-    return np.array(train_losses), np.array(test_losses), np.transpose(samples.detach().cpu().numpy(), [0, 2, 3, 1])
+    return np.array(train_losses), np.array(test_losses), np.transpose(samples.detach().cpu().numpy(), [0, 2, 3, 1]), pixelrcnn_auto, optimizer

@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import numpy as np
 
 class MaskedConv2d(nn.Conv2d):
     """Regular Masked Convolutional Layer"""
@@ -8,7 +9,7 @@ class MaskedConv2d(nn.Conv2d):
         # self.register_buffer('mask', self.weight.data.clone())#torch.ones(out_channels, in_channels, kernel_size, kernel_size))
         # self.mask.fill_(1)
         kH, kW = kernel_size, kernel_size
-        self.device = torch.device('cuda') if use_cuda else None
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.mask = torch.ones(out_channels, in_channels, kH, kW).to(self.device)
         self.mask[:, :, kH // 2, kW // 2 + (mask_type == 'B'):] = 0
         self.mask[:, :, kH // 2 + 1:] = 0
