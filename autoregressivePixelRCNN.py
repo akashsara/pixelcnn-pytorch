@@ -33,7 +33,7 @@ def normalize(x):
     """ Values in [0, 255] normalizing to [0, 1] """
     return x / 255
 
-def main(train_data, test_data, image_shape, epochs=10, lr=1e-3, num_samples=100):
+def main(train_data, test_data, image_shape, epochs=10, lr=1e-3, batch_size=128, num_samples=100):
     """
     train_data: A (n_train, H, W, C) uint8 numpy array of color images with values in [0, 255]
     test_data: A (n_test, H, W, C) uint8 numpy array of color images with values in [0, 255]
@@ -56,7 +56,7 @@ def main(train_data, test_data, image_shape, epochs=10, lr=1e-3, num_samples=100
     def get_test_loss(dataset, model):
         test_loss = []
         with torch.no_grad():
-            for batch in torch.split(dataset, 128):
+            for batch in torch.split(dataset, batch_size):
                 batch = normalize(batch)
                 out = model(batch)
                 loss = cross_entropy_loss(batch, out)
@@ -70,7 +70,7 @@ def main(train_data, test_data, image_shape, epochs=10, lr=1e-3, num_samples=100
     no_channels, out_channels, convolution_filters = C, C * output_bits, 120
 
     pixelrcnn_auto = AutoregressiveColorPixelRCNN(no_channels, out_channels, convolution_filters, device).to(device)
-    train_loader = torch.utils.data.DataLoader(train_data, batch_size=128, shuffle=True)
+    train_loader = torch.utils.data.DataLoader(train_data, batch_size=batch_size, shuffle=True)
     optimizer = torch.optim.Adam(pixelrcnn_auto.parameters(), lr=lr)
 
     train_losses = []

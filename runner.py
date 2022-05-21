@@ -12,8 +12,9 @@ shape_w = int(sys.argv[4])
 shape_c = int(sys.argv[5])
 epochs = int(sys.argv[6])
 lr = float(sys.argv[7])
-num_samples = int(sys.argv[8])
-save_dir = sys.argv[9]
+batch_size = int(sys.argv[8])
+num_samples = int(sys.argv[9])
+save_dir = sys.argv[10]
 
 shape = (shape_h, shape_w, shape_c)
 
@@ -22,7 +23,7 @@ train_data = np.load(train_data)
 test_data = np.load(test_data)
 
 print("Training.")
-train_loss, test_loss, model, optimizer = PixelCNN.main(train_data, test_data, shape, epochs, lr, num_samples)
+train_loss, test_loss, model, optimizer = PixelCNN.main(train_data, test_data, shape, epochs, lr, batch_size, num_samples)
 
 print("Training complete. Saving.")
 
