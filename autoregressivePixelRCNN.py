@@ -54,7 +54,8 @@ def main(train_data, test_data, image_shape, epochs=10, lr=1e-3, batch_size=128)
         test_loss = []
         with torch.no_grad():
             for _, batch in enumerate(tqdm(dataloader)):
-                out = model(batch.to(device))
+                batch = batch.to(device)
+                out = model(batch)
                 loss = cross_entropy_loss(batch, out)
                 test_loss.append(loss.item())
 
@@ -78,7 +79,8 @@ def main(train_data, test_data, image_shape, epochs=10, lr=1e-3, batch_size=128)
     for epoch in tqdm(range(epochs)):
         for _, batch in enumerate(tqdm(train_loader)):
             optimizer.zero_grad()
-            output = pixelrcnn_auto(batch.to(device))
+            batch = batch.to(device)
+            output = pixelrcnn_auto(batch)
             loss = cross_entropy_loss(batch, output)
             loss.backward()
             optimizer.step()
