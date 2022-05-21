@@ -29,30 +29,25 @@ class AutoregressiveColorPixelRCNN(nn.Module):
     def forward(self, x):
         return self.net(x)
 
+def normalize(x):
+    """ Values in [0, 255] normalizing to [0, 1] """
+    return x / 255
 
 def main(train_data, test_data, image_shape, epochs=10, lr=1e-3, num_samples=100):
     """
-    train_data: A (n_train, H, W, C) uint8 numpy array of color images with values in {0, 1, 2, 3}
-    test_data: A (n_test, H, W, C) uint8 numpy array of color images with values in {0, 1, 2, 3}
+    train_data: A (n_train, H, W, C) uint8 numpy array of color images with values in [0, 255]
+    test_data: A (n_test, H, W, C) uint8 numpy array of color images with values in [0, 255]
     image_shape: (H, W, C), height, width, and # of channels of the image
 
     Returns
     - a (# of training iterations,) numpy array of train_losses evaluated every minibatch
     - a (# of epochs + 1,) numpy array of test_losses evaluated once at initialization and after each epoch
-    - a numpy array of size (num_samples, H, C, W) of samples with values in {0, 1, 2, 3}
     """
     H, W, C = image_shape
     output_bits = 256
 
     gpu = torch.cuda.is_available()
     device = torch.device("cuda" if gpu else "cpu")
-
-    def normalize(x):
-        """ Values in [0, 3] normalizing to [-1, 1] """
-        return x / 255
-
-    def get_proba(output):
-        return torch.nn.functional.softmax(output.reshape(output.shape[0], output_bits, C, H, W), dim=1)
 
     def cross_entropy_loss(batch, output):
         per_bit_output = output.reshape(batch.shape[0], output_bits, C, H, W)
@@ -90,24 +85,41 @@ def main(train_data, test_data, image_shape, epochs=10, lr=1e-3, num_samples=100
             loss.backward()
             optimizer.step()
             train_losses.append(loss.item())
-
         test_loss = get_test_loss(test_data, pixelrcnn_auto)
         test_losses.append(test_loss)
-        print(f'{epoch + 1}/{epochs} epochs')
+        print(f"Epoch: [{epoch + 1}/{epochs}] Train Loss: {loss} \tTest Loss: {test_loss}")
+   
+    return np.array(train_losses), np.array(test_losses), pixelrcnn_auto, optimizer
 
+def sample(num_samples, shape, model):
+    """
+    num_samples: int, number of samples to generate
+    image_shape: (H, W, C), height, width, and # of channels of the image
+    model: trained model
+
+    Returns
+    - a numpy array of size (num_samples, H, W, C) of samples with values in [0, 255]
+    """
+    H, W, C = shape
+    output_bits = 256
+
+    def get_proba(output):
+        return torch.nn.functional.softmax(output.reshape(output.shape[0], output_bits, C, H, W), dim=1)
+
+    gpu = torch.cuda.is_available()
+    device = torch.device("cuda" if gpu else "cpu")
+
+    model.eval()
     if gpu:
         torch.cuda.empty_cache()
-    pixelrcnn_auto.eval()
 
-    print("Training complete. Sampling.")
     # Sampling
     samples = torch.zeros(size=(num_samples, C, H, W)).to(device)
     with torch.no_grad():
         for i in tqdm(range(H)):
-            for j in tqdm(range(W)):
-                for c in tqdm(range(C)):
-                    out = pixelrcnn_auto(normalize(samples))
+            for j in range(W):
+                for c in range(C):
+                    out = model(normalize(samples))
                     proba = get_proba(out)
                     samples[:, c, i, j] = torch.multinomial(proba[:, :, c, i, j], 1).squeeze().float()
-
-    return np.array(train_losses), np.array(test_losses), np.transpose(samples.detach().cpu().numpy(), [0, 2, 3, 1]), pixelrcnn_auto, optimizer
+    return np.transpose(samples.detach().cpu().numpy(), [0, 2, 3, 1])

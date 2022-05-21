@@ -1,4 +1,4 @@
-from autoregressivePixelRCNN import main
+import autoregressivePixelRCNN as PixelCNN
 import sys
 import numpy as np
 import torch
@@ -18,11 +18,13 @@ save_dir = sys.argv[9]
 shape = (shape_h, shape_w, shape_c)
 
 print("Loading data.")
-train_data = np.load(train_data)[:20]
-test_data = np.load(test_data)[:20]
+train_data = np.load(train_data)
+test_data = np.load(test_data)
 
 print("Training.")
-train_loss, test_loss, samples, model, optimizer = main(train_data, test_data, shape, epochs, lr, num_samples)
+train_loss, test_loss, model, optimizer = PixelCNN.main(train_data, test_data, shape, epochs, lr, num_samples)
+
+print("Training complete. Saving.")
 
 torch.save(
     {
@@ -35,8 +37,6 @@ torch.save(
     os.path.join(save_dir, "model.pt"),
 )
 
-np.save(os.path.join(save_dir, "samples.npy"), samples)
-
 plt.figure(figsize=(8, 6), dpi=100)
 ax = plt.subplot()
 plt.plot(train_loss, label="Train Loss")
@@ -46,3 +46,9 @@ ax.set_ylabel("Loss")
 plt.legend()
 plt.tight_layout()
 plt.savefig(os.path.join(save_dir, "loss.jpg"))
+
+print("Training complete. Sampling.")
+samples = PixelCNN.sample(num_samples, shape, model)
+
+print("Saving samples.")
+np.save(os.path.join(save_dir, "samples.npy"), samples)
