@@ -5,6 +5,8 @@ import torch
 import matplotlib.pyplot as plt
 import os
 import data
+from tqdm import tqdm
+from PIL import Image
 
 train_data = sys.argv[1]
 test_data = sys.argv[2]
@@ -14,8 +16,9 @@ shape_c = int(sys.argv[5])
 epochs = int(sys.argv[6])
 lr = float(sys.argv[7])
 batch_size = int(sys.argv[8])
-num_samples = int(sys.argv[9])
-save_dir = sys.argv[10]
+output_batch_size = int(sys.argv[9])
+output_num_batches = int(sys.argv[10])
+save_dir = sys.argv[11]
 
 shape = (shape_h, shape_w, shape_c)
 
@@ -53,7 +56,13 @@ plt.tight_layout()
 plt.savefig(os.path.join(save_dir, "loss.jpg"))
 
 print("Training complete. Sampling.")
-samples = PixelCNN.sample(num_samples, shape, model)
+all_samples = []
+for i in tqdm(range(output_num_batches)):
+    samples = PixelCNN.sample(output_batch_size, shape, model)
+    all_samples.append(samples)
 
 print("Saving samples.")
 np.save(os.path.join(save_dir, "samples.npy"), samples)
+for i, image in enumerate(samples):
+    image = Image.fromarray(image)
+    image.save(os.path.join(save_dir, f"{i}.png"))

@@ -123,4 +123,4 @@ def sample(num_samples, shape, model):
                     out = model(samples)
                     proba = get_proba(out)
                     samples[:, c, i, j] = torch.multinomial(proba[:, :, c, i, j], 1).squeeze().float()
-    return np.transpose(samples.detach().cpu().numpy(), [0, 2, 3, 1])
+    return np.transpose(samples.detach().cpu().numpy(), [0, 2, 3, 1]).astype(np.uint8)
