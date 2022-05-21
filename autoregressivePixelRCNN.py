@@ -29,11 +29,8 @@ class AutoregressiveColorPixelRCNN(nn.Module):
     def forward(self, x):
         return self.net(x)
 
-def normalize(x):
-    """ Values in [0, 255] normalizing to [0, 1] """
-    return x / 255
 
-def main(train_data, test_data, image_shape, epochs=10, lr=1e-3, batch_size=128, num_samples=100):
+def main(train_data, test_data, image_shape, epochs=10, lr=1e-3, batch_size=128):
     """
     train_data: A (n_train, H, W, C) uint8 numpy array of color images with values in [0, 255]
     test_data: A (n_test, H, W, C) uint8 numpy array of color images with values in [0, 255]
@@ -53,39 +50,40 @@ def main(train_data, test_data, image_shape, epochs=10, lr=1e-3, batch_size=128,
         per_bit_output = output.reshape(batch.shape[0], output_bits, C, H, W)
         return torch.nn.CrossEntropyLoss()(per_bit_output, batch.long())
 
-    def get_test_loss(dataset, model):
+    def get_test_loss(dataloader, model):
         test_loss = []
         with torch.no_grad():
-            for batch in torch.split(dataset, batch_size):
-                batch = normalize(batch)
+            for _, batch in enumerate(tqdm(dataloader)):
                 out = model(batch)
                 loss = cross_entropy_loss(batch, out)
                 test_loss.append(loss.item())
 
         return np.mean(np.array(test_loss))
 
-    train_data = torch.from_numpy(np.transpose(train_data, [0, 3, 1, 2])).float().to(device)
-    test_data = torch.from_numpy(np.transpose(test_data, [0, 3, 1, 2])).float().to(device)
+    num_dataloader_workers = 4 if gpu else 0
+    train_loader = torch.utils.data.DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=num_dataloader_workers,
+    pin_memory=gpu)
+    test_loader = torch.utils.data.DataLoader(test_data, batch_size=batch_size, shuffle=True, num_workers=num_dataloader_workers,
+    pin_memory=gpu)
 
     no_channels, out_channels, convolution_filters = C, C * output_bits, 120
-
     pixelrcnn_auto = AutoregressiveColorPixelRCNN(no_channels, out_channels, convolution_filters, device).to(device)
-    train_loader = torch.utils.data.DataLoader(train_data, batch_size=batch_size, shuffle=True)
+
     optimizer = torch.optim.Adam(pixelrcnn_auto.parameters(), lr=lr)
 
     train_losses = []
-    test_losses = [get_test_loss(test_data, pixelrcnn_auto)]
+    test_losses = [get_test_loss(test_loader, pixelrcnn_auto)]
 
     # Training
     for epoch in tqdm(range(epochs)):
-        for batch in train_loader:
+        for _, batch in enumerate(tqdm(train_loader)):
             optimizer.zero_grad()
-            output = pixelrcnn_auto(normalize(batch))
+            output = pixelrcnn_auto(batch)
             loss = cross_entropy_loss(batch, output)
             loss.backward()
             optimizer.step()
             train_losses.append(loss.item())
-        test_loss = get_test_loss(test_data, pixelrcnn_auto)
+        test_loss = get_test_loss(test_loader, pixelrcnn_auto)
         test_losses.append(test_loss)
         print(f"Epoch: [{epoch + 1}/{epochs}] Train Loss: {loss} \tTest Loss: {test_loss}")
    
@@ -119,7 +117,7 @@ def sample(num_samples, shape, model):
         for i in tqdm(range(H)):
             for j in range(W):
                 for c in range(C):
-                    out = model(normalize(samples))
+                    out = model(samples)
                     proba = get_proba(out)
                     samples[:, c, i, j] = torch.multinomial(proba[:, :, c, i, j], 1).squeeze().float()
     return np.transpose(samples.detach().cpu().numpy(), [0, 2, 3, 1])

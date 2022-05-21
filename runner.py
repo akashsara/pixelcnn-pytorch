@@ -4,6 +4,7 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 import os
+import data
 
 train_data = sys.argv[1]
 test_data = sys.argv[2]
@@ -19,11 +20,14 @@ save_dir = sys.argv[10]
 shape = (shape_h, shape_w, shape_c)
 
 print("Loading data.")
-train_data = np.load(train_data)
-test_data = np.load(test_data)
+# Preprocess & Create Data Loaders
+transform = data.image2tensor_resize(64)
+
+train_data = data.CustomDatasetNoMemory(train_data, transform, use_noise_images=False)
+test_data = data.CustomDatasetNoMemory(test_data, transform, use_noise_images=False)
 
 print("Training.")
-train_loss, test_loss, model, optimizer = PixelCNN.main(train_data, test_data, shape, epochs, lr, batch_size, num_samples)
+train_loss, test_loss, model, optimizer = PixelCNN.main(train_data, test_data, shape, epochs, lr, batch_size)
 
 print("Training complete. Saving.")
 
