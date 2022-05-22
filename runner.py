@@ -63,6 +63,6 @@ for i in tqdm(range(output_num_batches)):
 
 print("Saving samples.")
 np.save(os.path.join(save_dir, "samples.npy"), samples)
-for i, image in enumerate(samples):
+for i, image in enumerate(all_samples):
     image = Image.fromarray(image)
     image.save(os.path.join(save_dir, f"{i}.png"))
